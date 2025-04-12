@@ -3,3 +3,4 @@ folium
 geopy
 tensorflow
 scikit-learn
+dotenv

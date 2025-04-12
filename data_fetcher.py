@@ -1,7 +1,11 @@
 import requests
+from dotenv import load_dotenv
+import os
 
-TOMTOM_API_KEY = 'sHbaivFX9WxgG0LhOQDRyeT26zGyzGsc'
-OPENWEATHER_API_KEY = '24fb9b75e124323377ff4760d1861bf1'
+load_dotenv()
+
+TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
 def fetch_traffic_data(lat, lon):
     url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?point={lat}%2C{lon}&key={TOMTOM_API_KEY}"
