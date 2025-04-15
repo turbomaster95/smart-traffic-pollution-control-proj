@@ -1,36 +1,81 @@
-import requests
-from dotenv import load_dotenv
 import os
+import requests
+import polyline
+from dotenv import load_dotenv
+from google.cloud import bigquery
 
+# Load environment variables
 load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
-
-def fetch_traffic_data(lat, lon):
-    url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?point={lat}%2C{lon}&key={TOMTOM_API_KEY}"
-    r = requests.get(url)
-    return r.json()
-
-def fetch_weather_pollution_data(lat, lon):
-    weather_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
-    pollution_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
-    weather = requests.get(weather_url).json()
-    pollution = requests.get(pollution_url).json()
-    return weather, pollution
+# Initialize BigQuery client
+client = bigquery.Client()
 
 def get_route_polyline(origin, destination):
-    url = "https://router.project-osrm.org/route/v1/driving/{},{};{},{}?overview=full&geometries=geojson".format(
-        origin[1], origin[0], destination[1], destination[0]
+    origin_str = f"{origin[0]},{origin[1]}"
+    dest_str = f"{destination[0]},{destination[1]}"
+    url = (
+        f"https://maps.googleapis.com/maps/api/directions/json"
+        f"?origin={origin_str}&destination={dest_str}&key={GOOGLE_API_KEY}"
     )
-    res = requests.get(url)
-    data = res.json()
-    coords = data['routes'][0]['geometry']['coordinates']
-    return [(lat, lon) for lon, lat in coords]  # reverse for folium (lat, lon)
+    res = requests.get(url).json()
+    points = res['routes'][0]['overview_polyline']['points']
+    return polyline.decode(points)  # list of (lat, lon)
 
-def get_elevation_for_coords(coords):
-    url = "https://api.open-elevation.com/api/v1/lookup"
-    locations = [{"latitude": lat, "longitude": lon} for lat, lon in coords]
-    res = requests.post(url, json={"locations": locations})
-    data = res.json()["results"]
-    return [point["elevation"] for point in data]
+def get_elevation(lat, lon):
+    url = (
+        f"https://maps.googleapis.com/maps/api/elevation/json"
+        f"?locations={lat},{lon}&key={GOOGLE_API_KEY}"
+    )
+    res = requests.get(url).json()
+    return res['results'][0]['elevation'] if res['results'] else None
+
+def fetch_weather_pollution_data(lat, lon):
+    # Fetch weather data from NOAA GSOD
+    weather_query = f"""
+    SELECT
+        mean_temp, humidity
+    FROM
+        `bigquery-public-data.noaa_gsod.gsod2022`
+    WHERE
+        latitude BETWEEN {lat - 0.5} AND {lat + 0.5}
+        AND longitude BETWEEN {lon - 0.5} AND {lon + 0.5}
+        AND mean_temp IS NOT NULL
+        AND humidity IS NOT NULL
+    ORDER BY
+        date DESC
+    LIMIT 1
+    """
+    weather_job = client.query(weather_query)
+    weather_row = list(weather_job)[0]
+    temp_c = (weather_row.mean_temp - 32) * 5.0 / 9.0  # Convert F to C
+    humidity = weather_row.humidity
+
+    # Fetch air quality data from OpenAQ
+    pollution_query = f"""
+    SELECT
+        value,
+        parameter
+    FROM
+        `bigquery-public-data.openaq.global_air_quality`
+    WHERE
+        latitude BETWEEN {lat - 0.5} AND {lat + 0.5}
+        AND longitude BETWEEN {lon - 0.5} AND {lon + 0.5}
+        AND parameter IN ('pm25', 'pm10')
+    ORDER BY
+        timestamp DESC
+    LIMIT 2
+    """
+    pollution_job = client.query(pollution_query)
+    pollution_rows = list(pollution_job)
+    pm25 = next((row.value for row in pollution_rows if row.parameter == 'pm25'), None)
+    pm10 = next((row.value for row in pollution_rows if row.parameter == 'pm10'), None)
+    aqi = max(pm25 or 0, pm10 or 0)  # Simplified AQI estimation
+
+    return {
+        "temp": temp_c,
+        "humidity": humidity,
+        "aqi": aqi,
+        "pm25": pm25,
+        "pm10": pm10
+    }

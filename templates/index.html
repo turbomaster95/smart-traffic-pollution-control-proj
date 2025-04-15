@@ -1,22 +1,54 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Smart Traffic Dashboard</title>
+    <title>Route Map with Traffic Layer</title>
     <style>
-        body { font-family: sans-serif; text-align: center; }
-        iframe { width: 80%; height: 600px; border: none; }
+        #map {
+            height: 500px;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
-    <h1>Smart Traffic & Pollution Control</h1>
-    <form action="/" method="POST">
-    	<input type="text" name="origin" placeholder="Your current location..." required>
-    	<input type="text" name="destination" placeholder="Enter destination..." required>
-    	<button type="submit">Show Route</button>
-    </form>
-    <h3>Route to {{ destination }}</h3>
-    {% if show_map %}
-    <iframe src="{{ url_for('static', filename='map.html') }}"></iframe>
-    {% endif %}
+    <h3>Route Map with Live Traffic</h3>
+    <div id="map"></div>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&callback=initMap"
+        async defer></script>
+    <script>
+        function initMap() {
+	    const origin = { lat: {{ origin_lat }}, lng: {{ origin_lng }} };
+            const destination = { lat: {{ dest_lat }}, lng: {{ dest_lng }} };
+
+            const map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 13,
+                center: origin,
+            });
+
+            const directionsService = new google.maps.DirectionsService();
+            const directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map,
+            });
+
+            directionsService.route(
+                {
+                    origin: origin,
+                    destination: destination,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                },
+                (response, status) => {
+                    if (status === "OK") {
+                        directionsRenderer.setDirections(response);
+                    } else {
+                        alert("Directions request failed due to " + status);
+                    }
+                }
+            );
+
+            const trafficLayer = new google.maps.TrafficLayer();
+            trafficLayer.setMap(map);
+        }
+    </script>
 </body>
 </html>
+

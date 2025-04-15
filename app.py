@@ -1,22 +1,27 @@
 from flask import Flask, render_template, request
-from map_utils import geocode, create_map
+from dotenv import load_dotenv
+import os
+from map_utils import geocode
 
+load_dotenv()
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         origin = request.form["origin"]
-        destination = request.form["destination"]
+        dest = request.form["destination"]
+
         origin_coord = geocode(origin)
-        destination_coord = geocode(destination)
+        dest_coord = geocode(dest)
 
-        if origin_coord and destination_coord:
-            create_map(origin, destination, origin_coord, destination_coord)
-            return render_template("index.html", origin=origin, destination=destination, show_map=True)
-        else:
-            return render_template("index.html", show_map=False)
-    return render_template("index.html", show_map=False)
+        return render_template(
+            "index.html",
+            origin_lat=origin_coord[0],
+            origin_lng=origin_coord[1],
+            dest_lat=dest_coord[0],
+            dest_lng=dest_coord[1],
+            api_key=os.getenv("GOOGLE_API_KEY")
+        )
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True)
+    return render_template("form.html")  # page with origin/destination input
